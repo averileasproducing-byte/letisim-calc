@@ -451,7 +451,7 @@ en:{
   s1:'1. Creator and rate',lblName:'Creator’s name (optional)',phName:'e.g. Alexandra',
   lblFormat:'Format to calculate',
   lblPrice:function(f,s){return 'Creator’s rate for “'+f+'”, '+s;},
-  phPrice:function(){return 'e.g. '+nfmt(30000);},
+  phPrice:function(){return 'e.g. '+nfmt(350);},
   s2:'2. Creator’s reach',
   lblReels:'Average reach per Reel',phReach:function(){return 'e.g. '+nfmt(37500);},
   lblStories:'Average reach per Story',phAsk:'Ask the creator',
@@ -548,13 +548,18 @@ var FORMATS=[
   {id:'pack2',parts:{reels:1,post:1,stories:2}},
   {id:'custom',parts:{custom:1}}
 ];
-var KEY='lsim-calc-v4';
+var KEY='lsim-calc-v5';
 
+/* Money values live in two separate sets: rubles for RU, dollars for EN.
+   EN example numbers are the RU ones divided by 81.13 and rounded. */
 var DEF={
-  name:'',fmt:'reels',lang:'ru',cur:'₽',
-  prices:{reels:22600,story:2260,post:10170,pack1:27114,pack2:33893,custom:0},
+  name:'',fmt:'reels',lang:'ru',
   reach:{reels:37500,stories:0,post:0,custom:37500},
-  gift:1500,ifN:0,check:1300,rate:20,disc:20,p:3,period:''
+  ifN:0,rate:20,disc:20,p:3,period:'',
+  m:{
+    ru:{cur:'₽',gift:1500,check:1300,prices:{reels:22600,story:2260,post:10170,pack1:27114,pack2:33893,custom:0}},
+    en:{cur:'$',gift:20,check:16,prices:{reels:280,story:28,post:125,pack1:335,pack2:420,custom:0}}
+  }
 };
 function clone(o){return JSON.parse(JSON.stringify(o));}
 function load(){
@@ -563,13 +568,15 @@ function load(){
     var raw=localStorage.getItem(KEY);
     if(raw){
       var o=JSON.parse(raw);
-      Object.keys(DEF).forEach(function(k){
-        if(o[k]===undefined)return;
-        if(typeof DEF[k]==='object')s[k]=Object.assign({},DEF[k],o[k]);else s[k]=o[k];
+      ['name','fmt','lang','ifN','rate','disc','p','period'].forEach(function(k){if(o[k]!==undefined)s[k]=o[k];});
+      if(o.reach)s.reach=Object.assign({},DEF.reach,o.reach);
+      if(o.m)['ru','en'].forEach(function(l){
+        if(!o.m[l])return;
+        s.m[l]=Object.assign({},DEF.m[l],o.m[l]);
+        s.m[l].prices=Object.assign({},DEF.m[l].prices,o.m[l].prices||{});
       });
     }
   }catch(e){}
-  if(s.period==='3 месяца')s.period='';
   if(s.lang!=='en')s.lang='ru';
   /* a link like ...index.html?lang=en opens the English version */
   try{
@@ -581,6 +588,7 @@ function load(){
 var S=load();
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
 
+function M(){return S.m[S.lang];}
 function T(k){var d=LANGS[S.lang]||LANGS.ru,v=d[k];return v===undefined?LANGS.ru[k]:v;}
 function $(q){return document.querySelector(q);}
 function esc(t){return String(t).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
@@ -593,7 +601,7 @@ function parse(v){
   var x=parseFloat(s);return isFinite(x)&&x>0?x:0;
 }
 function nfmt(n){return Math.round(n).toLocaleString(S.lang==='en'?'en-US':'ru-RU');}
-function sym(){var s=String(S.cur||'').trim();return s||'₽';}
+function sym(){var s=String(M().cur||'').trim();return s||'₽';}
 function money(n){
   var s=sym(),v=nfmt(n);
   if(S.lang==='en')return s.length===1?s+v:s+' '+v;
@@ -617,7 +625,7 @@ function timesStr(m){
 }
 function fmtLabel(f){return T('fmt')[f.id];}
 function getFmt(){for(var i=0;i<FORMATS.length;i++)if(FORMATS[i].id===S.fmt)return FORMATS[i];return FORMATS[0];}
-function price(){return S.prices[S.fmt]||0;}
+function price(){return M().prices[S.fmt]||0;}
 
 /* ---------- math ---------- */
 function reachFor(fmt){
@@ -627,10 +635,10 @@ function reachFor(fmt){
 }
 function compute(){
   var f=getFmt(),r=reachFor(f),pr=price();
-  var unit=S.check*S.rate/100;
+  var unit=M().check*S.rate/100;
   var c={fmt:f,reach:r.total,miss:r.miss,unit:unit,price:pr,ok:r.total>0&&pr>0&&unit>0&&S.p>0};
   if(!c.ok)return c;
-  var n=Math.round(c.reach*S.p/1000),rev=n*unit,inc=rev+S.gift;
+  var n=Math.round(c.reach*S.p/1000),rev=n*unit,inc=rev+M().gift;
   c.sc={n:n,rev:rev,inc:inc,mult:rev/pr,every:n>0?c.reach/n:0};
   c.longterm=[3,6,12].map(function(k){return {k:k,total:k*rev};});
   if(S.ifN>0){var m=Math.round(S.ifN);c.mine={n:m,inc:m*unit,mult:m*unit/pr};}
@@ -657,7 +665,7 @@ function renderCard(c){
   h+='<p class="eyebrow">'+T('eyebrow')(nm?esc(nm):'')+'</p>';
   h+='<div class="hero-num" id="heroNum" data-v="'+Math.round(sc.rev)+'">'+money(sc.rev)+'</div>';
   h+='<p class="hero-sub">'+T('heroSub')+'</p>';
-  h+='<div class="hero-tags">'+(up?'<span class="badge">'+T('badgeUp')(sc.mult)+'</span>':'<span class="badge flat">'+T('badgeFlat')(Math.round(sc.mult*100))+'</span>')+(S.gift>0?'<span class="chip-gift">'+T('giftChip')(money(S.gift))+'</span>':'')+'</div>';
+  h+='<div class="hero-tags">'+(up?'<span class="badge">'+T('badgeUp')(sc.mult)+'</span>':'<span class="badge flat">'+T('badgeFlat')(Math.round(sc.mult*100))+'</span>')+(M().gift>0?'<span class="chip-gift">'+T('giftChip')(money(M().gift))+'</span>':'')+'</div>';
   h+='<div class="pass-fields"><div class="pf"><small>'+T('pfFormat')+'</small><b>'+esc(c.fmt.id==='custom'?T('fmtCustomShort'):fmtLabel(c.fmt))+'</b></div>';
   h+='<div class="pf"><small>'+T('pfViews')+'</small><b>'+nfmt(c.reach)+'</b></div>';
   h+='<div class="pf"><small>'+T('pfPrice')+'</small><b>'+money(c.price)+'</b></div></div></div>';
@@ -676,7 +684,7 @@ function renderCard(c){
 
   h+='<div><p class="sh">'+T('shHow')+'</p><ol class="steps">';
   h+='<li><span class="n">1</span><div><b>'+T('st1')+'</b><span>'+T('st1s')+'</span></div></li>';
-  h+='<li><span class="n">2</span><div><b>'+T('st2')(S.gift>0)+'</b><span>'+T('st2s')(S.gift>0)+'</span></div></li>';
+  h+='<li><span class="n">2</span><div><b>'+T('st2')(M().gift>0)+'</b><span>'+T('st2s')(M().gift>0)+'</span></div></li>';
   h+='<li><span class="n">3</span><div><b>'+T('st3')(dec(S.rate))+'</b><span>'+T('st3s')(S.disc>0?dec(S.disc):'')+'</span></div></li>';
   h+='</ol></div>';
 
@@ -686,8 +694,8 @@ function renderCard(c){
   h+='</div>';
 
   h+='<div class="close">';
-  if(S.gift>0&&sc.rev>0)h+='<span class="k">'+T('closeK')+'</span><div class="sum"><div><small>'+T('sumPromo')+'</small><b>'+money(sc.rev)+'</b></div><i>+</i><div><small>'+T('sumGift')+'</small><b>'+money(S.gift)+'</b></div><i>=</i><div class="tot"><small>'+T('sumTotal')+'</small><b>'+money(sc.inc)+'</b></div></div>';
-  h+='<b>'+T('closeB')+'</b><span>'+T('closeS')(every,money(S.check))+'</span></div>';
+  if(M().gift>0&&sc.rev>0)h+='<span class="k">'+T('closeK')+'</span><div class="sum"><div><small>'+T('sumPromo')+'</small><b>'+money(sc.rev)+'</b></div><i>+</i><div><small>'+T('sumGift')+'</small><b>'+money(M().gift)+'</b></div><i>=</i><div class="tot"><small>'+T('sumTotal')+'</small><b>'+money(sc.inc)+'</b></div></div>';
+  h+='<b>'+T('closeB')+'</b><span>'+T('closeS')(every,money(M().check))+'</span></div>';
   el.innerHTML=h;
 }
 
@@ -733,8 +741,8 @@ function buildText(c){
   var sc=c.sc;
   var L=T('msg')({
     nm:S.name.trim(),brand:T('brand'),custom:c.fmt.id==='custom',label:fmtLabel(c.fmt),
-    reach:c.reach,gift:S.gift,rate:S.rate,disc:S.disc,every:nice(sc.every||c.reach),n:sc.n,rev:sc.rev,
-    up:sc.mult>=1.05,mult:sc.mult,price:c.price,inc:sc.inc,mine:c.mine,six:c.longterm[1].total,check:S.check
+    reach:c.reach,gift:M().gift,rate:S.rate,disc:S.disc,every:nice(sc.every||c.reach),n:sc.n,rev:sc.rev,
+    up:sc.mult>=1.05,mult:sc.mult,price:c.price,inc:sc.inc,mine:c.mine,six:c.longterm[1].total,check:M().check
   });
   return L.join('\n').replace(/[  ]/g,' ');
 }
@@ -742,19 +750,19 @@ function buildText(c){
 /* ---------- inputs ---------- */
 var FIELDS=[
   {id:'name',kind:'text',get:function(){return S.name;},set:function(v){S.name=v;}},
-  {id:'price',kind:'int',get:function(){return price();},set:function(v){S.prices[S.fmt]=v;}},
+  {id:'price',kind:'int',get:function(){return price();},set:function(v){M().prices[S.fmt]=v;}},
   {id:'rReels',kind:'int',get:function(){return S.reach.reels;},set:function(v){S.reach.reels=v;}},
   {id:'rStories',kind:'int',get:function(){return S.reach.stories;},set:function(v){S.reach.stories=v;}},
   {id:'rPost',kind:'int',get:function(){return S.reach.post;},set:function(v){S.reach.post=v;}},
   {id:'rCustom',kind:'int',get:function(){return S.reach.custom;},set:function(v){S.reach.custom=v;}},
   {id:'p',kind:'dec',get:function(){return S.p;},set:function(v){S.p=v;}},
-  {id:'gift',kind:'int',get:function(){return S.gift;},set:function(v){S.gift=v;}},
+  {id:'gift',kind:'int',get:function(){return M().gift;},set:function(v){M().gift=v;}},
   {id:'ifN',kind:'int',get:function(){return S.ifN;},set:function(v){S.ifN=v;}},
-  {id:'check',kind:'int',get:function(){return S.check;},set:function(v){S.check=v;}},
+  {id:'check',kind:'int',get:function(){return M().check;},set:function(v){M().check=v;}},
   {id:'rate',kind:'dec',get:function(){return S.rate;},set:function(v){S.rate=v;}},
   {id:'disc',kind:'dec',get:function(){return S.disc;},set:function(v){S.disc=v;}},
   {id:'period',kind:'text',get:function(){return S.period;},set:function(v){S.period=v;}},
-  {id:'cur',kind:'text',get:function(){return S.cur;},set:function(v){S.cur=v;}}
+  {id:'cur',kind:'text',get:function(){return M().cur;},set:function(v){M().cur=v;}}
 ];
 function showVal(f){
   var v=f.get();
@@ -772,7 +780,7 @@ function syncAll(){
   $('#checkLbl').textContent=T('lblCheck')(s);
   var chips=$('#chips').children;
   for(var i=0;i<chips.length;i++){
-    var id=chips[i].dataset.id,pp=S.prices[id];
+    var id=chips[i].dataset.id,pp=M().prices[id];
     chips[i].setAttribute('aria-pressed',id===S.fmt?'true':'false');
     chips[i].firstChild.textContent=T('fmt')[id];
     chips[i].lastChild.textContent=pp?money(pp):T('chipNoPrice');
@@ -979,7 +987,7 @@ $('#mShare').addEventListener('click',function(){
 });
 $('#clearBtn').addEventListener('click',function(){
   S.name='';
-  Object.keys(S.prices).forEach(function(k){S.prices[k]=0;});
+  ['ru','en'].forEach(function(l){Object.keys(S.m[l].prices).forEach(function(k){S.m[l].prices[k]=0;});});
   Object.keys(S.reach).forEach(function(k){S.reach[k]=0;});
   S.ifN=0;
   syncAll();update();
